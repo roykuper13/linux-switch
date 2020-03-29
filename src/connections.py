@@ -29,15 +29,20 @@ class Connections(object):
 
     async def _read_message_queue(self):
         while True:
-            packet, device_entry = await self._message_queue.get()
-            await self._process_packet(packet, device_entry)
+            packet = await self._message_queue.get()
+            await self._process_packet(packet)
 
-    async def _process_packet(self, packet, src_device_entry):
+    async def _process_packet(self, packet):
         dst_mac = Ether(packet).dst
+        src_mac = Ether(packet).src
+
+        src_vlan = self._get_vlan_by_mac(src_mac)
+        if src_vlan is None:
+            return None
 
         # Looking for the destination device
         for dst_device in self._devices:
-            if dst_device.dev.get_mac == dst_mac and dst_device.vlan == src_device_entry.vlan:
+            if dst_device.dev.get_mac == dst_mac and dst_device.vlan == src_vlan:
 
                 if dst_device.port_type == PortType.TRUNK:
                     packet = add_vlan_tag(packet, dst_device.vlan)
@@ -48,7 +53,7 @@ class Connections(object):
     def _read_raw_packet(self, device_entry):
         try:
             packet = device_entry.sock.recv(IP_MAX_SIZE)
-            self._message_queue.put_nowait((packet, device_entry))
+            self._message_queue.put_nowait(packet)
         except OSError:
             # TODO: Currently the interface is closed successfully, but the cb
             # raises an exception.
@@ -82,6 +87,13 @@ class Connections(object):
 
                 curr_dev.dev.run_from_namespace('arp -s {ip} {mac}'.format(
                     ip=new_dev.dev.get_ip, mac=new_dev.dev.get_mac))
+
+    def _get_vlan_by_mac(self, mac):
+        for dev_entry in self._devices:
+            if mac == dev_entry.dev.get_mac:
+                return dev_entry.vlan
+
+        return None
 
     def append_device(self, dev, vlan, port_type):
         def _append_device_entry(self, new_dev_entry):
