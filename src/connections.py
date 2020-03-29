@@ -4,8 +4,10 @@ import threading
 from scapy.all import Ether
 from collections import namedtuple
 from contextlib import suppress
+import concurrent.futures
 
 from src.util import PortType, add_vlan_tag, fix_checksums
+from src.manipulation import ManipulateArgs, default_manipulation_cb
 
 
 DeviceEntry = namedtuple('DeviceEntry', [
@@ -18,6 +20,8 @@ DeviceEntry = namedtuple('DeviceEntry', [
 
 IP_MAX_SIZE = 65535
 
+MAX_WORKERS = 5
+
 
 class Connections(object):
 
@@ -26,25 +30,34 @@ class Connections(object):
         self._event_loop = None
         self._devices = list()
         self._message_queue = None
+        self._executers = None
+        self.manipulate_cb = default_manipulation_cb
 
     async def _read_message_queue(self):
         while True:
-            packet = await self._message_queue.get()
-            await self._process_packet(packet)
+            packet, dev_entry = await self._message_queue.get()
+            await self._process_packet(packet, dev_entry)
 
-    async def _process_packet(self, packet):
-        dst_mac = Ether(packet).dst
-        src_mac = Ether(packet).src
+    async def _process_packet(self, packet, src_device_entry):
+        # Should we deal with tagging. We left an option for the manipulator
+        # to tag the packet.
+        should_inject_raw = False
 
-        src_vlan = self._get_vlan_by_mac(src_mac)
+        if self.manipulate_cb is not None:
+            packet, should_inject_raw = await self._event_loop.run_in_executor(
+                self._executers,
+                self.manipulate_cb,
+                ManipulateArgs(packet, src_device_entry.port_type, src_device_entry.vlan))
+
+        src_vlan = self._get_vlan_by_mac(Ether(packet).src)
         if src_vlan is None:
             return None
 
         # Looking for the destination device
         for dst_device in self._devices:
-            if dst_device.dev.get_mac == dst_mac and dst_device.vlan == src_vlan:
+            if dst_device.dev.get_mac == Ether(packet).dst and dst_device.vlan == src_vlan:
 
-                if dst_device.port_type == PortType.TRUNK:
+                if dst_device.port_type == PortType.TRUNK and not should_inject_raw:
                     packet = add_vlan_tag(packet, dst_device.vlan)
 
                 packet = fix_checksums(packet)
@@ -53,7 +66,7 @@ class Connections(object):
     def _read_raw_packet(self, device_entry):
         try:
             packet = device_entry.sock.recv(IP_MAX_SIZE)
-            self._message_queue.put_nowait(packet)
+            self._message_queue.put_nowait((packet, device_entry))
         except OSError:
             # TODO: Currently the interface is closed successfully, but the cb
             # raises an exception.
@@ -62,6 +75,8 @@ class Connections(object):
     def _start_event_loop(self):
         self._event_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._event_loop)
+
+        self._executers = concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
         self._message_queue = asyncio.Queue()
         asyncio.ensure_future(self._read_message_queue())

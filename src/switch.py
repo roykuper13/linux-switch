@@ -1,5 +1,6 @@
 from src.connections import Connections
 from src.util import shell_run_and_check, PortType
+from src.manipulation import validate_manipulation_cb
 from src.exception import (NamespaceCreationException,
                            BridgeInterfaceCreationException, NamespaceConnectionException)
 
@@ -87,6 +88,13 @@ class Switch(object):
         self._connections.remove_device(dev)
 
         dev.term()
+
+    def set_manipulation(self, cb):
+        if validate_manipulation_cb(cb):
+            self._connections.manipulate_cb = cb
+            return True
+
+        return False
 
     def term(self):
         self._connections.stop_connections_thread()

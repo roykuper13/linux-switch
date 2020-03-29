@@ -7,7 +7,7 @@ as Python objects.
 
 Moreover, linux-switch let you manipulate packets before the network switch forwards
 them (see example below). Thus, External binaries/applications that performs
-any logic on packets (for example, NAT) can be tested using linux-switch.
+any logic on packets (for example - VLAN Hopping, NAT, etc) can be tested using linux-switch.
 
 
 ## Description
@@ -26,6 +26,7 @@ When using access - they'll send untagged packets.
 
 ## Example
 
+### Basic
 ```python
 
 from switch import Switch
@@ -83,3 +84,7 @@ switch.disconnect_device(dev2)
 
 switch.term()
 ```
+
+### Manipulations
+
+For VLAN-Hopping example, see tests/test_manipulation.py (test_vlan_hopping)
