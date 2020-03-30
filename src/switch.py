@@ -1,4 +1,4 @@
-from src.connections import Connections
+from src.connections import Connections, NO_FILTER
 from src.util import shell_run_and_check, PortType
 from src.manipulation import validate_manipulation_cb
 from src.exception import (NamespaceCreationException,
@@ -89,9 +89,9 @@ class Switch(object):
 
         dev.term()
 
-    def set_manipulation(self, cb):
+    def set_manipulation(self, cb, bpf_filter=NO_FILTER):
         if validate_manipulation_cb(cb):
-            self._connections.manipulate_cb = cb
+            self._connections.set_manipulation(cb, bpf_filter)
             return True
 
         return False

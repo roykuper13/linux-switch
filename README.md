@@ -8,6 +8,8 @@ as Python objects.
 Moreover, linux-switch let you manipulate packets before the network switch forwards
 them (see example below). Thus, External binaries/applications that performs
 any logic on packets (for example - VLAN Hopping, NAT, etc) can be tested using linux-switch.
+Also, linux-switch provide a "Punt-Policies"-like mechanisem, which gives you the option
+to filter traffic that the manipulation routine will be recieve.
 
 
 ## Description
@@ -22,6 +24,11 @@ switch device, meaning:
 3. When connecting `Device`s to the `Switch`, the connection type must be specified (access or trunk).
 When using trunk - the switch and the device will send/recieve tagged packet.
 When using access - they'll send untagged packets.
+4. The switch have "Punt-Policies", which means only filtered packets will be forwarded
+to the manipulation routine. The punt-policies feature introduce a `duplicate` mode. When set,
+packets that are filtered (using the punt policies) will be processed by both manipulation routine
+and switch. When not set, packets will be processed by the manipultion routine only, so that routine
+can, for example, drop packets!
 
 
 ## Example
@@ -85,6 +92,7 @@ switch.disconnect_device(dev2)
 switch.term()
 ```
 
-### Manipulations
+### Manipulations(VLAN Hopping) and "Punt-Policies"
 
-For VLAN-Hopping example, see tests/test_manipulation.py (test_vlan_hopping)
+A very good example for VLAN-Hopping and Punt-Policies can be seen
+in tests/test_manipulation (test_vlan_hopping_and_punt_policies).

@@ -6,8 +6,8 @@ from collections import namedtuple
 from contextlib import suppress
 import concurrent.futures
 
-from src.util import PortType, add_vlan_tag, fix_checksums
-from src.manipulation import ManipulateArgs, default_manipulation_cb
+from src.util import PortType, add_vlan_tag, fix_checksums, apply_bpf_filter
+from src.manipulation import ManipulateArgs
 
 
 DeviceEntry = namedtuple('DeviceEntry', [
@@ -21,6 +21,7 @@ DeviceEntry = namedtuple('DeviceEntry', [
 IP_MAX_SIZE = 65535
 
 MAX_WORKERS = 5
+NO_FILTER = None
 
 
 class Connections(object):
@@ -31,7 +32,9 @@ class Connections(object):
         self._devices = list()
         self._message_queue = None
         self._executers = None
-        self.manipulate_cb = default_manipulation_cb
+
+        self._manipulate_cb = None
+        self._manipulate_filter = NO_FILTER
 
     async def _read_message_queue(self):
         while True:
@@ -43,11 +46,15 @@ class Connections(object):
         # to tag the packet.
         should_inject_raw = False
 
-        if self.manipulate_cb is not None:
-            packet, should_inject_raw = await self._event_loop.run_in_executor(
-                self._executers,
-                self.manipulate_cb,
-                ManipulateArgs(packet, src_device_entry.port_type, src_device_entry.vlan))
+        if self._manipulate_cb is not None:
+            # We'll manipulate if there's no filter or if there's
+            # filter and the packet matches the filter
+            if self._manipulate_filter == NO_FILTER or \
+                    apply_bpf_filter(packet, self._manipulate_filter):
+                packet, should_inject_raw = await self._event_loop.run_in_executor(
+                    self._executers,
+                    self._manipulate_cb,
+                    ManipulateArgs(packet, src_device_entry.port_type, src_device_entry.vlan))
 
         src_vlan = self._get_vlan_by_mac(Ether(packet).src)
         if src_vlan is None:
@@ -138,6 +145,17 @@ class Connections(object):
                     break
 
         self._event_loop.call_soon_threadsafe(_remove_device_entry, self, dev_to_remove)
+
+    def set_manipulation(self, cb, bpf_filter):
+        ''' Assumes cb is in valid form '''
+        def __set_manipulation(cb, bpf_filter):
+            self._manipulate_cb = cb
+            self._manipulate_filter = bpf_filter
+
+        # set_manipulation is called from the main thread.
+        # Since we're affecting the event loop thread, we should call_soon_threadsafe,
+        # so the call will be synchronized.
+        self._event_loop.call_soon_threadsafe(__set_manipulation, cb, bpf_filter)
 
     def start_connections_thread(self):
         self._connections_thread.start()
