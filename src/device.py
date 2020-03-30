@@ -84,11 +84,24 @@ class Device(object):
         return 'veth-{}'.format(self._dev_name)
 
     def run_from_namespace(self, cmd):
+        """
+        Runs a shell command from the device's context (i.e - from
+        the network namespace that associated to the device).
+
+        :param cmd: the shell command to execute
+
+        :return str: The result of the command (stdout/stderr)
+        """
         out, err = run_shell_cmd('ip netns exec {ns} {cmd}'.format(ns=self._dev_name, cmd=cmd))
         return out.decode('utf-8') if err == b'' else err.decode('utf-8')
 
     def setup_namespace(self):
-        ''' Safe to call more then once. '''
+        """
+        Sets up the network namespace of the device.
+
+        :note: The `Switch` will call this when the device will be connected to it
+               (using `connect_device_*`), but it is safe to call this more then once.
+        """
         if self._ns_is_set:
             return True
 
@@ -99,7 +112,12 @@ class Device(object):
         return True
 
     def term(self):
-        ''' Safe to call more then once. '''
+        """
+        Cleans the device's network namespace, and the created veth interfaces.
+
+        :note: The `Switch` will call this when the device will be disconnected from it
+               (using `disconnect_device`), but it is safe to call this more then once.
+        """
         if self._ns_is_set:
             shell_run_and_check('ip netns del {}'.format(self._dev_name))
             # We've created the switch's veth interface, so we are responsible for

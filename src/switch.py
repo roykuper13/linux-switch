@@ -51,7 +51,39 @@ class Switch(object):
 
         return True
 
+    def set_manipulation(self, cb, punt_policies_bpf=NO_FILTER):
+        """
+        Sets the manipulation routine.
+
+        Before the switch checks to which device a packet should be forwarded,
+        it sends the packet the a manipulation routine.
+        You can pass a callback that manipulate the packet, for example, change the
+        destination and source addresses and the vlan tag, in order to perform VLAN-Hopping,
+        or NAT.
+
+        In addition, In case you want to emulate "Punt-Policies" (decide what packets
+        should be forwarded to the manipulation callback), you can pass a bpf filter.
+        As mentioned, only packets that are filtered by this bpf filter will be forwarded
+        to the manipultion routine before continuing the switch's flow.
+
+        :param cb: A callback the the manipulation routine.
+        :param punt_policies_bpf: The "Punt-Policies". Default is no-filter.
+        """
+        if validate_manipulation_cb(cb):
+            self._connections.set_manipulation(cb, punt_policies_bpf)
+            return True
+
+        return False
+
     def connect_device_access(self, dev, vlan):
+        """
+        Connects device to switch in access mode (meaning - both device and switch
+        will send untagged packets. Note that the switch will still make sure
+        that packets from one vlan will not be forwarded to other vlans).
+
+        :param dev: A `Device` instance that should be connected to the switch.
+        :param vlan: The vlan that the device will be associated to.
+        """
         if not dev.setup_namespace():
             raise NamespaceCreationException("failed to create network namespace for {}".format(
                 dev.get_name))
@@ -67,6 +99,14 @@ class Switch(object):
         self._connections.append_device(dev, vlan, PortType.ACCESS)
 
     def connect_device_trunk(self, dev, vlan):
+        """
+        Connects device to switch in trunk mode (meaning - a vlan interface
+        will be created for both switch and device. Both will send and recieve tagged
+        packets, with dot1q layer).
+
+        :param dev: A `Device` instance that should be connected to the switch.
+        :param vlan: The vlan that the device will be associated to.
+        """
         if not dev.setup_namespace():
             raise NamespaceCreationException("failed to create network namespace for {}".format(
                 dev.get_name))
@@ -82,6 +122,13 @@ class Switch(object):
         self._connections.append_device(dev, vlan, PortType.TRUNK)
 
     def disconnect_device(self, dev):
+        """
+        Disconnects a device from switch.
+        All interfaces and namespaces that were created will be cleaned up.
+
+        :param dev: The `Device` instance to disconnect from the switch.
+        """
+
         # Delete switch's bridge interface
         shell_run_and_check('ip link del br-{}'.format(dev.get_name))
 
@@ -89,12 +136,8 @@ class Switch(object):
 
         dev.term()
 
-    def set_manipulation(self, cb, bpf_filter=NO_FILTER):
-        if validate_manipulation_cb(cb):
-            self._connections.set_manipulation(cb, bpf_filter)
-            return True
-
-        return False
-
     def term(self):
+        """
+        Terminates all connections, and cleans up all left-over namespaces and interfaces.
+        """
         self._connections.stop_connections_thread()
