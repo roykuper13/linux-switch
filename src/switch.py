@@ -51,7 +51,7 @@ class Switch(object):
 
         return True
 
-    def set_manipulation(self, cb, punt_policies_bpf=NO_FILTER):
+    def set_manipulation(self, cb, punt_policies_bpf=NO_FILTER, duplicate=False):
         """
         Sets the manipulation routine.
 
@@ -64,13 +64,32 @@ class Switch(object):
         In addition, In case you want to emulate "Punt-Policies" (decide what packets
         should be forwarded to the manipulation callback), you can pass a bpf filter.
         As mentioned, only packets that are filtered by this bpf filter will be forwarded
-        to the manipultion routine before continuing the switch's flow.
+        to the manipultion routine before they get processed by the switch.
 
         :param cb: A callback the the manipulation routine.
+                   The callback must have arguments and return annotations,
+                   since this function validates this callback using them.
+
+                   A valid callback has to match the following form:
+                   1. Recieve one argument. Its type is ManipulateArgs.
+                   2. Return ManipulateRet.
+
+                   An example of a valid callback (taken from manipulation.py:
+                   `default_manipulation_cb`):
+
+                def default_manipulation_cb(manipulate_args: ManipulateArgs) -> ManipulateRet:
+                    return ManipulateRet(manipulate_args.packet, ManipulateActions.HANDLE_ENCAP)
+
+                    This callback for example, just returns the packet.
+
         :param punt_policies_bpf: The "Punt-Policies". Default is no-filter.
+        :param duplicate: True if the packet should be processed by both switch
+                          and manipulator, False if the packet should be processed
+                          by the manipulator only.
+        :return: True if the callback is in a valid form, False otherwise.
         """
         if validate_manipulation_cb(cb):
-            self._connections.set_manipulation(cb, punt_policies_bpf)
+            self._connections.set_manipulation(cb, punt_policies_bpf, duplicate)
             return True
 
         return False

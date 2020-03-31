@@ -2,7 +2,8 @@ import threading
 from scapy.all import Ether, IP, ICMP, Raw
 
 from src.device import Device
-from src.manipulation import ManipulateArgs, ManipulateRet
+from src.manipulation import ManipulateArgs, ManipulateRet, ManipulateActions
+from src.util import add_vlan_tag
 
 
 D1_ADDR = '192.168.250.1'
@@ -29,7 +30,19 @@ def forward_d1_to_d3(arg: ManipulateArgs) -> ManipulateRet:
     packet[Ether].src = GLOBAL_D4_MAC
     packet[Ether].dst = GLOBAL_D3_MAC
 
-    return ManipulateRet(Raw(packet).load, False)
+    return ManipulateRet(Raw(packet).load, ManipulateActions.HANDLE_ENCAP)
+
+
+def drop_packet(arg: ManipulateArgs) -> ManipulateRet:
+    return ManipulateRet(None, ManipulateActions.DROP)
+
+
+def tag_packet_inject_raw(arg: ManipulateArgs) -> ManipulateRet:
+    return ManipulateRet(add_vlan_tag(arg.packet, arg.src_vlan), ManipulateActions.INJECT_RAW)
+
+
+def tag_packet_handle_encap(arg: ManipulateArgs) -> ManipulateRet:
+    return ManipulateRet(add_vlan_tag(arg.packet, arg.src_vlan), ManipulateActions.HANDLE_ENCAP)
 
 
 def test_vlan_hopping_and_punt_policies(switch):
@@ -65,7 +78,7 @@ def test_vlan_hopping_and_punt_policies(switch):
 
     # Setting the manipulation routine, and punt-policies
     switch.set_manipulation(forward_d1_to_d3, 'src host {} && dst host {}'.format(
-        D1_ADDR, D2_ADDR))
+        D1_ADDR, D2_ADDR), False)
 
     def _run_listening_nc(dev):
         out = dev.run_from_namespace('timeout 7s nc -lu 0.0.0.0 4444')
@@ -89,3 +102,62 @@ def test_vlan_hopping_and_punt_policies(switch):
     switch.disconnect_device(d2)
     switch.disconnect_device(d3)
     switch.disconnect_device(d4)
+
+
+def test_manipulator_drop_packets(switch):
+    d1 = Device('a', '192.168.250.1', '255.255.255.0')
+    d2 = Device('b', '192.168.250.2', '255.255.255.0')
+
+    switch.connect_device_access(d1, 20)
+    switch.connect_device_access(d2, 20)
+
+    switch.set_manipulation(drop_packet, duplicate=False)
+
+    # No duplication, and the manipulator drops everything
+    # so we expect to recieve no response.
+    out = d1.run_from_namespace('ping -c 1 192.168.250.2 -W 2')
+    assert '1 packets transmitted, 0 received' in out
+
+    # Now we set `duplicate` to True, which means that even
+    # if we drop packets, the original packet will still be processed
+    # by the switch.
+    switch.set_manipulation(drop_packet, duplicate=True)
+
+    # So now we expect to recieve the response
+    out = d1.run_from_namespace('ping -c 1 192.168.250.2')
+    assert '1 packets transmitted, 1 received' in out
+
+    switch.disconnect_device(d1)
+    switch.disconnect_device(d2)
+
+
+def test_manipulator_inject_raw(switch):
+    d1 = Device('a', '192.168.250.1', '255.255.255.0')
+    d2 = Device('b', '192.168.250.2', '255.255.255.0')
+
+    switch.connect_device_trunk(d1, 20)
+    switch.connect_device_trunk(d2, 20)
+
+    # The manipulator will tag all packets, and will set INJECT_RAW
+    # as the action. The original packets won't get processed by switch,
+    # So if we get a valid connection, it means that the manipulator
+    # successfully tagged the packet, and the switch didn't deal with
+    # with tagging; it just send the packet as is (raw).
+    switch.set_manipulation(tag_packet_inject_raw, duplicate=False)
+
+    out = d1.run_from_namespace('ping -c 1 192.168.250.2')
+    assert '1 packets transmitted, 1 received' in out
+
+    out = d2.run_from_namespace('ping -c 1 192.168.250.1')
+    assert '1 packets transmitted, 1 received' in out
+
+    switch.set_manipulation(tag_packet_handle_encap, duplicate=False)
+
+    out = d1.run_from_namespace('ping -c 1 192.168.250.2 -W 2')
+    assert '1 packets transmitted, 0 received' in out
+
+    out = d2.run_from_namespace('ping -c 1 192.168.250.1 -W 2')
+    assert '1 packets transmitted, 0 received' in out
+
+    switch.disconnect_device(d1)
+    switch.disconnect_device(d2)
