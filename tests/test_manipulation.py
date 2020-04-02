@@ -1,9 +1,9 @@
 import threading
 from scapy.all import Ether, IP, ICMP, Raw
 
-from src.device import Device
-from src.manipulation import ManipulateArgs, ManipulateRet, ManipulateActions
-from src.util import add_vlan_tag
+from linuxswitch.device import Device
+from linuxswitch.manipulation import ManipulateArgs, ManipulateRet, ManipulateActions
+from linuxswitch.util import add_vlan_tag
 
 
 D1_ADDR = '192.168.250.1'

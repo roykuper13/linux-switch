@@ -6,8 +6,8 @@ from collections import namedtuple
 from contextlib import suppress
 import concurrent.futures
 
-from src.util import PortType, add_vlan_tag, fix_checksums, apply_bpf_filter
-from src.manipulation import ManipulateArgs, ManipulateActions
+from linuxswitch.util import PortType, add_vlan_tag, fix_checksums, apply_bpf_filter
+from linuxswitch.manipulation import ManipulateArgs, ManipulateActions
 
 
 DeviceEntry = namedtuple('DeviceEntry', [

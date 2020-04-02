@@ -36,8 +36,8 @@ can, for example, drop packets!
 ### Basic
 ```python
 
-from switch import Switch
-from device import Device
+from linuxswitch.switch import Switch
+from linuxswitch.device import Device
 
 # Creating a network switch instance
 switch = Switch()

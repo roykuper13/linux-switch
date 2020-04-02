@@ -1,8 +1,8 @@
-from src.connections import Connections, NO_FILTER
-from src.util import shell_run_and_check, PortType
-from src.manipulation import validate_manipulation_cb
-from src.exception import (NamespaceCreationException,
-                           BridgeInterfaceCreationException, NamespaceConnectionException)
+from linuxswitch.connections import Connections, NO_FILTER
+from linuxswitch.util import shell_run_and_check, PortType
+from linuxswitch.manipulation import validate_manipulation_cb
+from linuxswitch.exception import (NamespaceCreationException,
+                                   BridgeInterfaceCreationException, NamespaceConnectionException)
 
 
 class Switch(object):

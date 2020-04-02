@@ -1,6 +1,6 @@
 import threading
 
-from src.device import Device
+from linuxswitch.device import Device
 
 
 def test_access_connection(switch):

@@ -1,5 +1,5 @@
-from src.util import shell_run_and_check, convert_subnetmask_to_cidr, run_shell_cmd
-from src.exception import LongInterfaceException, NamespaceCreationException
+from linuxswitch.util import shell_run_and_check, convert_subnetmask_to_cidr, run_shell_cmd
+from linuxswitch.exception import LongInterfaceException, NamespaceCreationException
 
 
 class Device(object):

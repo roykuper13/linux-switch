@@ -1,6 +1,6 @@
 import pytest
 
-from src.switch import Switch
+from linuxswitch.switch import Switch
 
 
 @pytest.fixture
