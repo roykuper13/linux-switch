@@ -1,14 +1,5 @@
-import enum
 import inspect
 from collections import namedtuple
-
-
-class ManipulateActions(enum.Enum):
-    DROP = 0
-    # The manipulator will deal with tagging, if needed.
-    INJECT_RAW = 1
-    # The switch should deal with tagging, if needed.
-    HANDLE_ENCAP = 2
 
 
 ManipulateArgs = namedtuple('ManipulateInfo', [
@@ -17,20 +8,6 @@ ManipulateArgs = namedtuple('ManipulateInfo', [
     'is_trunk_port',
     'src_vlan',
 ])
-
-ManipulateRet = namedtuple('ManipulateRet', [
-    'packet',
-    # From ManipulateActions
-    'action',
-])
-
-
-def default_manipulation_cb(manipulate_args: ManipulateArgs) -> ManipulateRet:
-    '''
-    Can be used as an example of a valid signature of manipulation callback.
-    This default callback just returns the packet.
-    '''
-    return ManipulateRet(manipulate_args.packet, ManipulateActions.HANDLE_ENCAP)
 
 
 def validate_manipulation_cb(cb):
@@ -43,4 +20,4 @@ def validate_manipulation_cb(cb):
 
     param = list(sig.parameters.values())[0]
 
-    return param.annotation == ManipulateArgs and sig.return_annotation == ManipulateRet
+    return param.annotation == ManipulateArgs

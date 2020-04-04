@@ -6,8 +6,8 @@ from collections import namedtuple
 from contextlib import suppress
 import concurrent.futures
 
-from linuxswitch.util import PortType, add_vlan_tag, fix_checksums, apply_bpf_filter
-from linuxswitch.manipulation import ManipulateArgs, ManipulateActions
+from linuxswitch.util import PortType, DeviceType, add_vlan_tag, fix_checksums, apply_bpf_filter
+from linuxswitch.manipulation import ManipulateArgs
 
 
 DeviceEntry = namedtuple('DeviceEntry', [
@@ -43,52 +43,41 @@ class Connections(object):
             await self._process_packet(packet, dev_entry)
 
     async def _process_packet(self, packet, src_device_entry):
-        # Should we deal with tagging. We left an option for the manipulator
-        # to tag the packet.
-        should_inject_raw = False
-
-        packets = [packet]
-
-        if self._manipulate_cb is not None:
+        """
+        If `src_device_entry` is None, we're not performing manipulation.
+        """
+        if src_device_entry is not None and self._manipulate_cb is not None:
             # We'll manipulate if there's no filter or if there's
             # filter and the packet matches the filter
             if self._manipulate_filter == NO_FILTER or \
                     apply_bpf_filter(packet, self._manipulate_filter):
 
-                # In case the packet matches the filter, and `duplicate` is not
-                # set, we remove the packet from the list, since the manipulator
-                # might drop the packet.
-                if not self._manipulate_dup:
-                    packets.remove(packet)
-
-                packet, action = await self._event_loop.run_in_executor(
+                await self._event_loop.run_in_executor(
                     self._executers,
                     self._manipulate_cb,
                     ManipulateArgs(packet, src_device_entry.port_type, src_device_entry.vlan))
 
-                if action == ManipulateActions.INJECT_RAW:
-                    should_inject_raw = True
-                    packets.append(packet)
-                elif action == ManipulateActions.HANDLE_ENCAP:
-                    should_inject_raw = False
-                    packets.append(packet)
-                # else - action is DROP, so we don't add the packet to the list.
+                # In case the packet matches the filter, and `duplicate` is not
+                # set, then only the manipulator should process the packet.
+                # Therefore, we abort here.
+                if not self._manipulate_dup:
+                    return None
 
-        for packet in packets:
+        src_vlan = self._get_vlan_by_mac(Ether(packet).src)
+        if src_vlan is None:
+            return None
 
-            src_vlan = self._get_vlan_by_mac(Ether(packet).src)
-            if src_vlan is None:
-                return None
+        # Looking for the destination device
+        for dst_device in self._devices:
+            if dst_device.dev.get_mac == Ether(packet).dst and dst_device.vlan == src_vlan:
 
-            # Looking for the destination device
-            for dst_device in self._devices:
-                if dst_device.dev.get_mac == Ether(packet).dst and dst_device.vlan == src_vlan:
+                # TODO: currently we're taggint packets. Maybe the Device
+                # should state whether we should tag or inject raw.
+                if dst_device.port_type == PortType.TRUNK:
+                    packet = add_vlan_tag(packet, dst_device.vlan)
 
-                    if dst_device.port_type == PortType.TRUNK and not should_inject_raw:
-                        packet = add_vlan_tag(packet, dst_device.vlan)
-
-                    packet = fix_checksums(packet)
-                    await self._event_loop.sock_sendall(dst_device.sock, packet)
+                packet = fix_checksums(packet)
+                await self._event_loop.sock_sendall(dst_device.sock, packet)
 
     def _read_raw_packet(self, device_entry):
         try:
@@ -137,12 +126,12 @@ class Connections(object):
 
         return None
 
-    def append_device(self, dev, vlan, port_type):
+    def append_device(self, dev, vlan, port_type, iface_name):
         def _append_device_entry(self, new_dev_entry):
             self._devices.append(new_dev_entry)
 
         sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.htons(0x0003))
-        sock.bind(('br-{}'.format(dev.get_name), 0))
+        sock.bind((iface_name, 0))
 
         new_dev_entry = DeviceEntry(dev, sock, vlan, port_type)
 
@@ -168,7 +157,7 @@ class Connections(object):
 
     def set_manipulation(self, cb, bpf_filter, duplicate):
         ''' Assumes cb is in valid form '''
-        def __set_manipulation(cb, bpf_filter):
+        def __set_manipulation(cb, bpf_filter, duplicate):
             self._manipulate_cb = cb
             self._manipulate_filter = bpf_filter
             self._manipulate_dup = duplicate
@@ -176,7 +165,10 @@ class Connections(object):
         # set_manipulation is called from the main thread.
         # Since we're affecting the event loop thread, we should call_soon_threadsafe,
         # so the call will be synchronized.
-        self._event_loop.call_soon_threadsafe(__set_manipulation, cb, bpf_filter)
+        self._event_loop.call_soon_threadsafe(__set_manipulation, cb, bpf_filter, duplicate)
+
+    def manipulator_queue_packet(self, packet):
+        self._message_queue.put_nowait((packet, None))
 
     def start_connections_thread(self):
         self._connections_thread.start()

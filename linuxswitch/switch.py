@@ -2,7 +2,9 @@ from linuxswitch.connections import Connections, NO_FILTER
 from linuxswitch.util import shell_run_and_check, PortType
 from linuxswitch.manipulation import validate_manipulation_cb
 from linuxswitch.exception import (NamespaceCreationException,
-                                   BridgeInterfaceCreationException, NamespaceConnectionException)
+                                   BridgeInterfaceCreationException,
+                                   NamespaceConnectionException,
+                                   ManipulationCallbackException)
 
 
 class Switch(object):
@@ -56,10 +58,13 @@ class Switch(object):
         Sets the manipulation routine.
 
         Before the switch checks to which device a packet should be forwarded,
-        it sends the packet the a manipulation routine.
+        it sends the packet to the manipulation routine.
         You can pass a callback that manipulate the packet, for example, change the
         destination and source addresses and the vlan tag, in order to perform VLAN-Hopping,
         or NAT.
+
+        The function returns a callback that can be used by the manipulator in order
+        to queue packets that should be processed by the `Switch`.
 
         In addition, In case you want to emulate "Punt-Policies" (decide what packets
         should be forwarded to the manipulation callback), you can pass a bpf filter.
@@ -67,32 +72,23 @@ class Switch(object):
         to the manipultion routine before they get processed by the switch.
 
         :param cb: A callback the the manipulation routine.
-                   The callback must have arguments and return annotations,
+                   The callback must have arguments annotations,
                    since this function validates this callback using them.
-
-                   A valid callback has to match the following form:
-                   1. Recieve one argument. Its type is ManipulateArgs.
-                   2. Return ManipulateRet.
-
-                   An example of a valid callback (taken from manipulation.py:
-                   `default_manipulation_cb`):
-
-                def default_manipulation_cb(manipulate_args: ManipulateArgs) -> ManipulateRet:
-                    return ManipulateRet(manipulate_args.packet, ManipulateActions.HANDLE_ENCAP)
-
-                    This callback for example, just returns the packet.
+                   A valid callback recieves one argument.
+                   Its type is ManipulateArgs (see manipulation.py).
 
         :param punt_policies_bpf: The "Punt-Policies". Default is no-filter.
         :param duplicate: True if the packet should be processed by both switch
                           and manipulator, False if the packet should be processed
                           by the manipulator only.
-        :return: True if the callback is in a valid form, False otherwise.
+        :return: A callback that can be used by the manipulator in order to queue
+                 packets that should be processed by the `Switch`.
         """
-        if validate_manipulation_cb(cb):
-            self._connections.set_manipulation(cb, punt_policies_bpf, duplicate)
-            return True
+        if not validate_manipulation_cb(cb):
+            raise ManipulationCallbackException("Callback has invalid signature")
 
-        return False
+        self._connections.set_manipulation(cb, punt_policies_bpf, duplicate)
+        return self._connections.manipulator_queue_packet
 
     def connect_device_access(self, dev, vlan):
         """
@@ -115,7 +111,7 @@ class Switch(object):
             raise NamespaceConnectionException("failed to create connection to namespace {}".format(
                 dev.get_name))
 
-        self._connections.append_device(dev, vlan, PortType.ACCESS)
+        self._connections.append_device(dev, vlan, PortType.ACCESS, 'br-{}'.format(dev.get_name))
 
     def connect_device_trunk(self, dev, vlan):
         """
@@ -138,7 +134,7 @@ class Switch(object):
             raise NamespaceConnectionException("failed to create connection to namespace {}".format(
                 dev.get_name))
 
-        self._connections.append_device(dev, vlan, PortType.TRUNK)
+        self._connections.append_device(dev, vlan, PortType.TRUNK, 'br-{}'.format(dev.get_name))
 
     def disconnect_device(self, dev):
         """

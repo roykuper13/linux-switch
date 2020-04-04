@@ -12,3 +12,7 @@ class BridgeInterfaceCreationException(Exception):
 
 class NamespaceConnectionException(Exception):
     pass
+
+
+class ManipulationCallbackException(Exception):
+    pass

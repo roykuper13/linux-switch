@@ -13,6 +13,11 @@ class PortType(enum.Enum):
     TRUNK = 1
 
 
+class DeviceType(enum.Enum):
+    DEVICE = 0
+    MANIPULATOR = 1
+
+
 def shell_run_and_check(cmd):
     # Pretty ugly but whatever
     res = (b'', b'') == run_shell_cmd(cmd)
