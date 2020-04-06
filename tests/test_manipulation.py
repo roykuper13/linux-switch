@@ -54,6 +54,11 @@ def check_echo_reply(arg: ManipulateArgs):
     GLOBAL_RECIEVED_ECHO_REPLY = ICMP in packet and packet['ICMP'].type == ECHO_REPLY
 
 
+def tag_packet_and_send(arg: ManipulateArgs):
+    global GLOBAL_QUEUE_PKTS_CB
+    GLOBAL_QUEUE_PKTS_CB(add_vlan_tag(arg.packet, arg.src_vlan))
+
+
 def test_vlan_hopping_and_punt_policies(switch):
     """
     In this test, d1 is in vlan 20, and it'll try to connect
@@ -164,6 +169,47 @@ def test_manipulator_init_connection(switch):
     time.sleep(1.5)
 
     assert GLOBAL_RECIEVED_ECHO_REPLY
+
+    switch.disconnect_device(d1)
+    switch.disconnect_device(d2)
+
+
+def test_manipulator_inject_raw(switch):
+    global GLOBAL_QUEUE_PKTS_CB
+    d1 = Device('a', '192.168.250.1', '255.255.255.0')
+    d2 = Device('b', '192.168.250.2', '255.255.255.0')
+
+    switch.connect_device_trunk(d1, 20)
+    switch.connect_device_trunk(d2, 20)
+
+    # The manipulator will tag all packets, and will set INJECT_RAW
+    # as the action. The original packets won't get processed by switch,
+    # So if we get a valid connection, it means that the manipulator
+    # successfully tagged the packet, and the switch didn't deal with
+    # with tagging; it just send the packet as is (raw).
+    GLOBAL_QUEUE_PKTS_CB = switch.set_manipulation(
+        tag_packet_and_send,
+        duplicate=False,
+        inject_raw=True)
+
+    out = d1.run_from_namespace('ping -c 1 192.168.250.2')
+    assert '1 packets transmitted, 1 received' in out
+
+    out = d2.run_from_namespace('ping -c 1 192.168.250.1')
+    assert '1 packets transmitted, 1 received' in out
+
+    # Here we set `inject_raw` to False, meaning the packet will be tagged twice!
+    # Therefore we're not expecting echo-replies.
+    GLOBAL_QUEUE_PKTS_CB = switch.set_manipulation(
+        tag_packet_and_send,
+        duplicate=False,
+        inject_raw=False)
+
+    out = d1.run_from_namespace('ping -c 1 192.168.250.2 -W 2')
+    assert '1 packets transmitted, 0 received' in out
+
+    out = d2.run_from_namespace('ping -c 1 192.168.250.1 -W 2')
+    assert '1 packets transmitted, 0 received' in out
 
     switch.disconnect_device(d1)
     switch.disconnect_device(d2)

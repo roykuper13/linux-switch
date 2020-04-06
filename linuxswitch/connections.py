@@ -36,6 +36,7 @@ class Connections(object):
         self._manipulate_cb = None
         self._manipulate_filter = NO_FILTER
         self._manipulate_dup = False
+        self._manipulate_inject_raw = False
 
     async def _read_message_queue(self):
         while True:
@@ -43,9 +44,11 @@ class Connections(object):
             await self._process_packet(packet, dev_entry)
 
     async def _process_packet(self, packet, src_device_entry):
-        """
-        If `src_device_entry` is None, we're not performing manipulation.
-        """
+        # In case `src_device_entry` is None, then the packet was queued by the manipulator.
+        # Therefore, we'll use self._manipulate_inject_raw. Otherwise, set to False
+        # since the Switch should deal with tagging.
+        should_inject_raw = self._manipulate_inject_raw if src_device_entry is None else False
+
         if src_device_entry is not None and self._manipulate_cb is not None:
             # We'll manipulate if there's no filter or if there's
             # filter and the packet matches the filter
@@ -67,13 +70,10 @@ class Connections(object):
         if src_vlan is None:
             return None
 
-        # Looking for the destination device
         for dst_device in self._devices:
             if dst_device.dev.get_mac == Ether(packet).dst and dst_device.vlan == src_vlan:
 
-                # TODO: currently we're taggint packets. Maybe the Device
-                # should state whether we should tag or inject raw.
-                if dst_device.port_type == PortType.TRUNK:
+                if dst_device.port_type == PortType.TRUNK and not should_inject_raw:
                     packet = add_vlan_tag(packet, dst_device.vlan)
 
                 packet = fix_checksums(packet)
@@ -155,17 +155,22 @@ class Connections(object):
 
         self._event_loop.call_soon_threadsafe(_remove_device_entry, self, dev_to_remove)
 
-    def set_manipulation(self, cb, bpf_filter, duplicate):
+    def set_manipulation(self, cb, bpf_filter, duplicate, inject_raw):
         ''' Assumes cb is in valid form '''
-        def __set_manipulation(cb, bpf_filter, duplicate):
+        def __set_manipulation(cb, bpf_filter, duplicate, inject_raw):
             self._manipulate_cb = cb
             self._manipulate_filter = bpf_filter
             self._manipulate_dup = duplicate
+            self._manipulate_inject_raw = inject_raw
 
         # set_manipulation is called from the main thread.
         # Since we're affecting the event loop thread, we should call_soon_threadsafe,
         # so the call will be synchronized.
-        self._event_loop.call_soon_threadsafe(__set_manipulation, cb, bpf_filter, duplicate)
+        self._event_loop.call_soon_threadsafe(__set_manipulation,
+                                              cb,
+                                              bpf_filter,
+                                              duplicate,
+                                              inject_raw)
 
     def manipulator_queue_packet(self, packet):
         self._message_queue.put_nowait((packet, None))

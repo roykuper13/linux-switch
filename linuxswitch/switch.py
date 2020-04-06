@@ -53,7 +53,7 @@ class Switch(object):
 
         return True
 
-    def set_manipulation(self, cb, punt_policies_bpf=NO_FILTER, duplicate=False):
+    def set_manipulation(self, cb, punt_policies_bpf=NO_FILTER, duplicate=False, inject_raw=False):
         """
         Sets the manipulation routine.
 
@@ -81,13 +81,16 @@ class Switch(object):
         :param duplicate: True if the packet should be processed by both switch
                           and manipulator, False if the packet should be processed
                           by the manipulator only.
+        :param inject_raw: True if the switch should not deal with tagging, and just
+                           inject queued packets raw. False if the switch should tag
+                           packets that were queued by the manipulator.
         :return: A callback that can be used by the manipulator in order to queue
                  packets that should be processed by the `Switch`.
         """
         if not validate_manipulation_cb(cb):
             raise ManipulationCallbackException("Callback has invalid signature")
 
-        self._connections.set_manipulation(cb, punt_policies_bpf, duplicate)
+        self._connections.set_manipulation(cb, punt_policies_bpf, duplicate, inject_raw)
         return self._connections.manipulator_queue_packet
 
     def connect_device_access(self, dev, vlan):
